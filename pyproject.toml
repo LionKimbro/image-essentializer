@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "image-essentializer"
+version = "0.1.0"
+description = "Reconstruct related image sets from recovered folders."
+requires-python = ">=3.10"
+dependencies = [
+    "lionscliapp",
+    "Pillow",
+]
+authors = [
+    {name = "Lion Kimbro"}
+]
+license = {text = "CC0-1.0"}
+readme = "README.md"
+
+[project.scripts]
+imgess = "imgess.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

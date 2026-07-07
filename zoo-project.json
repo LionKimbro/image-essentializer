@@ -1,0 +1,13 @@
+{
+  "zookeep-project-guid": "a2c5080e-0849-4778-a9fb-139fe16f87b7",
+  "name": "image-essentializer",
+  "repo-type": "python-2026-03",
+  "license": "CC0-1.0",
+  "repository": {
+    "name": "image-essentializer",
+    "visibility": "public"
+  },
+  "python-package": {
+    "name": "imgess"
+  }
+}

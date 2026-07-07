@@ -1,0 +1,191 @@
+{
+  "document": {
+    "document-id": "imgess.index.softspec.v1",
+    "title": "Image Essentializer Persistent Index SoftSpec",
+    "tags": ["imgess", "image-matching", "softspec", "m1"],
+    "purpose": "Describe the JSON index emitted by image-essentializer scans."
+  },
+  "softspec": {
+    "types": {
+      "sha256": {
+        "type": "string",
+        "semantic_type": "sha256",
+        "constraints": {"pattern": "^[a-f0-9]{64}$"}
+      },
+      "timestamp": {
+        "type": "string",
+        "semantic_type": "utc-timestamp"
+      },
+      "bit-fingerprint": {
+        "type": "string",
+        "description": "Median-threshold image fingerprint. Character x means ignored/masked pixel."
+      }
+    },
+    "schemas": {
+      "imgess-index": {
+        "title": "Image Essentializer Index",
+        "description": "Persistent JSON index for images, scan metadata, proposed clusters, review decisions, and future AI labels.",
+        "data-dictionary": {
+          "owner": "image-essentializer",
+          "created_by": "imgess scan",
+          "updated_by": ["imgess scan", "imgess gui"],
+          "persistence": "Saved as JSON; source images remain in place and are referenced by path.",
+          "primary_audience": ["human maintainer", "LLM coding assistant", "debug tooling"]
+        },
+        "structure": {
+          "type": "object",
+          "keys": {
+            "index_version": {"type": "integer", "required": true},
+            "created": {"type": "timestamp", "required": true},
+            "scan_run": {"ref": "scan-run", "required": true},
+            "scan_runs": {
+              "type": "array",
+              "items": {"ref": "scan-run"},
+              "description": "All scan runs merged into this dataset. Older indexes may only have scan_run."
+            },
+            "last_scan_sha256s": {
+              "type": "array",
+              "items": "sha256",
+              "description": "SHA identities seen in the most recent scan. Used to limit incremental candidate comparisons."
+            },
+            "dataset_stats": {
+              "type": "object",
+              "additional_keys": true,
+              "description": "Whole-dataset counters after merge and clustering."
+            },
+            "pairwise_cache": {
+              "ref": "pairwise-cache",
+              "description": "Cached pairwise comparison results keyed canonically by shaA|shaB. Readers should check both shaA|shaB and shaB|shaA for compatibility."
+            },
+            "images": {
+              "type": "object",
+              "key_type": "sha256",
+              "value_type": {"ref": "image-record"},
+              "required": true
+            },
+            "clusters": {
+              "type": "array",
+              "items": {"ref": "computed-cluster"},
+              "required": true
+            },
+            "decisions": {
+              "type": "array",
+              "items": "human decision records, not fully specified yet"
+            },
+            "ai_label_suggestions": {
+              "type": "array",
+              "items": "AI label suggestion records, not fully specified yet"
+            }
+          },
+          "additional_keys": true
+        }
+      },
+      "scan-run": {
+        "title": "Scan Run",
+        "structure": {
+          "type": "object",
+          "keys": {
+            "id_suffix": {"type": "string", "required": true},
+            "started": {"type": "timestamp", "required": true},
+            "ended": {"type": "timestamp", "required": true},
+            "source_paths": {"type": "array", "items": "file-path", "required": true},
+            "settings": {"type": "object", "additional_keys": true},
+            "stats": {"type": "object", "additional_keys": true}
+          }
+        }
+      },
+      "image-record": {
+        "title": "Image Record",
+        "structure": {
+          "type": "object",
+          "keys": {
+            "sha256": {"type": "sha256", "required": true},
+            "found_on_filesystem_at": {
+              "type": "object",
+              "key_type": "file-path",
+              "value_type": "timestamp",
+              "required": true
+            },
+            "analysis": {"ref": "image-analysis", "required": true}
+          }
+        }
+      },
+      "image-analysis": {
+        "title": "Image Analysis",
+        "structure": {
+          "type": "object",
+          "keys": {
+            "width": {"type": "integer", "required": true},
+            "height": {"type": "integer", "required": true},
+            "aspect_ratio": {"type": "number", "required": true},
+            "format": {"type": "string", "required": true},
+            "mode": {"type": "string", "required": true},
+            "fingerprints": {
+              "type": "object",
+              "key_type": "fingerprint-name",
+              "value_type": "bit-fingerprint",
+              "required": true
+            }
+          }
+        }
+      },
+      "computed-cluster": {
+        "title": "Computed Cluster",
+        "structure": {
+          "type": "object",
+          "keys": {
+            "cluster_id": {"type": "string", "required": true},
+            "title": {"type": "string", "required": true},
+            "status": {
+              "type": "string",
+              "vocabulary": {
+                "computed": "Produced by the clustering pass and not yet reviewed.",
+                "confirmed-same-design": "Human accepted this as one design.",
+                "same-design-variant": "Human marked members as variants of one design.",
+                "nearby-sibling-design": "Human marked members as related but not necessarily same design.",
+                "needs-split": "Human marked this cluster as needing separation.",
+                "rejected": "Human rejected this computed cluster."
+              },
+              "vocabulary_mode": "open"
+            },
+            "image_sha256s": {"type": "array", "items": "sha256", "required": true},
+            "confidence": {"type": "number", "required": true},
+            "matches": {"type": "array", "items": "pairwise match records"},
+            "human_notes": {"type": "string"},
+            "variant_tags": {"type": "array", "items": "tag"}
+          },
+          "additional_keys": true
+        }
+      },
+      "pairwise-cache": {
+        "title": "Pairwise Cache",
+        "structure": {
+          "type": "object",
+          "keys": {
+            "cache_version": {"type": "integer"},
+            "engine": {"type": "string"},
+            "settings": {"type": "object", "additional_keys": true},
+            "comparisons": {
+              "type": "object",
+              "key_type": "sha-pair-key",
+              "value_type": {
+                "type": "object",
+                "keys": {
+                  "left_sha256": {"type": "sha256"},
+                  "right_sha256": {"type": "sha256"},
+                  "score": {"type": "number"},
+                  "distance": {"type": "number"},
+                  "coarse_score": {"type": "number"},
+                  "stage": {"type": "string"},
+                  "distances": {"type": "object", "additional_keys": true}
+                },
+                "additional_keys": true
+              }
+            }
+          },
+          "additional_keys": true
+        }
+      }
+    }
+  }
+}
