@@ -20,6 +20,7 @@ g = {
     "selected_cluster_id": "",
     "selected_sha256": "",
     "context_sha256": "",
+    "display_mode": "cluster",
     "photo_refs": [],
     "thumbnail_cards": {},
 }
@@ -113,13 +114,17 @@ def build_buttons(frame):
     make_button(buttons, "Related, Not Same", "nearby-sibling-design", 2)
     make_button(buttons, "Needs Split", "needs-split", 3)
     make_button(buttons, "Reject Cluster", "rejected", 4)
-    ttk.Button(buttons, text="Remove Selected Image From Cluster", command=handle_remove_selected_image).grid(row=0, column=5, padx=(12, 4))
+    remove_button = ttk.Button(buttons, text="Remove Selected Image From Cluster", command=handle_remove_selected_image)
+    remove_button.grid(row=0, column=5, padx=(12, 4))
+    widgets["remove_image_button"] = remove_button
     ttk.Button(buttons, text="Save", command=handle_save_requested).grid(row=0, column=6, padx=4)
     ttk.Button(buttons, text="Locate Image From Clipboard", command=handle_locate_clipboard_image).grid(row=1, column=0, columnspan=3, sticky="w", padx=4, pady=(6, 0))
 
 
 def make_button(parent, text, status, column):
-    ttk.Button(parent, text=text, command=lambda: set_selected_cluster_status(status)).grid(row=0, column=column, padx=4)
+    button = ttk.Button(parent, text=text, command=lambda: set_selected_cluster_status(status))
+    button.grid(row=0, column=column, padx=4)
+    widgets.setdefault("decision_buttons", []).append(button)
 
 
 def build_notes(frame):
@@ -190,6 +195,7 @@ def project_cluster_list():
             text=cluster["title"],
             values=(len(cluster["image_sha256s"]), cluster["confidence"], cluster["status"]),
         )
+    set_cluster_controls_enabled(False)
 
 
 def handle_cluster_selected(event=None):
@@ -198,6 +204,7 @@ def handle_cluster_selected(event=None):
         return
     g["selected_cluster_id"] = selection[0]
     g["selected_sha256"] = ""
+    g["display_mode"] = "cluster"
     project_selected_cluster()
 
 
@@ -205,6 +212,8 @@ def project_selected_cluster():
     cluster = get_selected_cluster()
     if cluster is None:
         return
+    g["display_mode"] = "cluster"
+    set_cluster_controls_enabled(True)
     widgets["title"].configure(
         text=f"{cluster['title']}  |  {len(cluster['image_sha256s'])} images  |  {cluster['status']}"
     )
@@ -242,6 +251,47 @@ def project_thumbnails(cluster):
             column = 0
             row += 1
     refresh_thumbnail_selection()
+
+
+def project_singleton_image(sha256, score):
+    g["display_mode"] = "singleton"
+    g["selected_cluster_id"] = ""
+    g["selected_sha256"] = sha256
+    tree = widgets["cluster_tree"]
+    tree.selection_remove(tree.selection())
+    set_cluster_controls_enabled(False)
+    widgets["title"].configure(
+        text=f"Unclustered Image  |  match score {score:.4f}  |  no cluster selected"
+    )
+    widgets["tags_var"].set("")
+    widgets["notes_text"].delete("1.0", "end")
+    frame = widgets["thumb_frame"]
+    for child in frame.winfo_children():
+        child.destroy()
+    g["photo_refs"] = []
+    g["thumbnail_cards"] = {}
+    card = tk.Frame(
+        frame,
+        padx=6,
+        pady=6,
+        relief="solid",
+        borderwidth=3,
+        highlightthickness=2,
+        highlightbackground="#1f6feb",
+        highlightcolor="#1f6feb",
+    )
+    card.grid(row=0, column=0, sticky="n", padx=5, pady=5)
+    g["thumbnail_cards"][sha256] = card
+    build_thumbnail_card(card, sha256)
+    refresh_thumbnail_selection()
+
+
+def set_cluster_controls_enabled(enabled):
+    state = "normal" if enabled else "disabled"
+    for button in widgets.get("decision_buttons", []):
+        button.configure(state=state)
+    if "remove_image_button" in widgets:
+        widgets["remove_image_button"].configure(state=state)
 
 
 def build_thumbnail_card(card, sha256):
@@ -338,20 +388,14 @@ def handle_locate_clipboard_image():
     if not results:
         messagebox.showinfo("Image Essentializer", "No indexed images are available to compare.")
         return
-    best_cluster_result = first_result_with_cluster(results)
-    if best_cluster_result is None:
-        best = results[0]
+    best = results[0]
+    if not best["cluster_ids"]:
+        project_singleton_image(best["sha256"], best["score"])
         widgets["status_var"].set(
             f"Closest image is unclustered: {best['score']:.4f}  {best['sha256'][:16]}"
         )
-        messagebox.showinfo(
-            "Image Essentializer",
-            "The closest indexed image is not part of a visible cluster.\n\n"
-            f"Score: {best['score']:.4f}\n"
-            f"SHA: {best['sha256']}\n"
-            f"Path: {best['paths'][0]}",
-        )
         return
+    best_cluster_result = best
     cluster_id = best_cluster_result["cluster_ids"][0]
     select_cluster(cluster_id)
     select_thumbnail(best_cluster_result["sha256"])
@@ -403,13 +447,6 @@ def load_image_file(path):
         return None
 
 
-def first_result_with_cluster(results):
-    for result in results:
-        if result["cluster_ids"]:
-            return result
-    return None
-
-
 def select_cluster(cluster_id):
     tree = widgets["cluster_tree"]
     if not tree.exists(cluster_id):
@@ -429,6 +466,8 @@ def refresh_thumbnail_selection():
 
 
 def set_selected_cluster_status(status):
+    if g["display_mode"] != "cluster":
+        return
     cluster = get_selected_cluster()
     if cluster is None:
         return
@@ -455,6 +494,8 @@ def project_cluster_row(cluster):
 def handle_key_pressed(event):
     if should_ignore_review_shortcut(event):
         return
+    if g["display_mode"] != "cluster":
+        return
     key = event.keysym.lower()
     shortcuts = {
         "a": "confirmed-same-design",
@@ -476,6 +517,9 @@ def should_ignore_review_shortcut(event):
 
 
 def handle_remove_selected_image():
+    if g["display_mode"] != "cluster":
+        messagebox.showinfo("Image Essentializer", "Select a cluster before removing an image from it.")
+        return
     cluster = get_selected_cluster()
     sha256 = g["selected_sha256"]
     if cluster is None or not sha256:
@@ -523,6 +567,8 @@ def handle_notes_changed(event=None):
 
 
 def sync_notes_to_cluster(cluster):
+    if g["display_mode"] != "cluster":
+        return
     tags = widgets["tags_var"].get().replace(";", ",").split(",")
     cluster["variant_tags"] = [tag.strip() for tag in tags if tag.strip()]
     cluster["human_notes"] = widgets["notes_text"].get("1.0", "end").strip()

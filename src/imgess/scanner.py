@@ -11,6 +11,7 @@ from imgess.fingerprints import compute_fingerprints
 
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp"}
+IMAGE_READ_ERRORS = (OSError, SyntaxError, ValueError, UnidentifiedImageError)
 
 
 def utc_now():
@@ -86,7 +87,7 @@ def make_scan_index(started, source_paths, settings, stats, images, rejected):
             "sha256s": sorted(images),
         },
         "images": images,
-        "rejected": rejected[:500],
+        "rejected": rejected,
         "clusters": [],
         "decisions": [],
         "ai_label_suggestions": [],
@@ -144,7 +145,7 @@ def inspect_image_file(path, images, rejected, stats, settings):
                 images[sha256]["found_on_filesystem_at"][str(path)] = discovered
             stats["accepted_files"] += 1
             stats["unique_images"] = len(images)
-    except (OSError, UnidentifiedImageError) as exc:
+    except IMAGE_READ_ERRORS as exc:
         stats["rejected_files"] += 1
         rejected.append({"path": str(path), "reason": "unreadable-image", "error": str(exc)})
 
@@ -287,7 +288,7 @@ def inspect_image_dimensions(path, settings, stats, dimensions, pass_examples, r
         with Image.open(path) as image:
             width, height = image.size
             fmt = image.format or path.suffix.lower().lstrip(".").upper()
-    except (OSError, UnidentifiedImageError) as exc:
+    except IMAGE_READ_ERRORS as exc:
         stats["unreadable_images"] += 1
         add_example(reject_examples, {
             "path": str(path),
